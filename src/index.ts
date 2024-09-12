@@ -16,7 +16,7 @@ async function getPDFFromDB() {
   return source;
 }
 
-const app = new Elysia({}).use(cors());
+const app = new Elysia().use(cors());
 app.use(swagger());
 app.use(
   logger({
@@ -31,17 +31,19 @@ app.get("/", async ({ request }) => {
 app.post(
   "/upload-pdf",
   async ({ body: { file, content }, request }) => {
-    const appURL = request.url;
+    const fileUrl = "https://khmerdx.com/";
+    const name = uuidv4() + ".pdf";
+    const urlPath = "/Uploads/" + name;
     if (!content && !file)
       return Response.json(
         { message: "No file provided or content provided" },
         { status: 400 }
       );
-    const name = uuidv4() + ".pdf";
-    const path = "./public/" + name;
+
+    const url = new URL(urlPath, fileUrl).toString();
+    const path = "C:\\NSM SOLUTION PROJECT\\KhmerDX\\KhmerDX\\Uploads\\" + name;
     if (content) {
       if (isURL(content)) {
-        // user past url
         const scrapContent = await scrapeBody(content);
         if (scrapContent) content = scrapContent;
       }
@@ -53,7 +55,9 @@ app.post(
       const buffer = new Uint8Array(await file.arrayBuffer());
       Bun.write(path, buffer);
     }
-    const url = new URL(path, appURL).toString();
+
+    // const url = new URL(urlPath, fileUrl).toString();
+    
     const response = await api({
       method: "POST",
       path: "/sources/add-url",
