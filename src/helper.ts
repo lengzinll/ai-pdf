@@ -28,3 +28,12 @@ export async function scrapeBody(url: string) {
     console.error("Error fetching the website:", error);
   }
 }
+
+export function isURL(string: string): boolean {
+  try {
+      new URL(string);
+      return true;
+  } catch {
+      return false;
+  }
+}

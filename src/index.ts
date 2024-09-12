@@ -5,7 +5,7 @@ import cors from "@elysiajs/cors";
 import { api } from "./config";
 import redis from "./redis";
 import { unlinkSync } from "node:fs";
-import { contentToPdf, scrapeBody } from "./helper";
+import { contentToPdf, isURL, scrapeBody } from "./helper";
 
 type PDFType = {
   sourceId: string;
@@ -27,7 +27,7 @@ const chatSchema = t.Object({
       }),
       content: t.String({
         minLength: 1,
-        default: "hello",
+        default: "what the doc say",
       }),
     })
   ),
@@ -40,16 +40,14 @@ async function getPDFFromDB() {
   return pdf;
 }
 
-const app = new Elysia({  }).use(cors());
+const app = new Elysia({}).use(cors());
 app.use(swagger());
 // app.use(
 //   logger({
 //     level: "error",
 //   })
 // );
-app.use(
-  staticPlugin()
-);
+app.use(staticPlugin());
 
 app.get("/", async ({ request }) => {
   const appURL = request.url;
@@ -67,6 +65,10 @@ app.post(
     const name = Math.round(Math.random()) + ".pdf";
     const path = "./public/" + name;
     if (content) {
+      if (isURL(content)) { // user past url
+        const scrapContent = await scrapeBody(content);
+        if (scrapContent) content = scrapContent;
+      }
       await contentToPdf(content, path);
     } else {
       if (!file) {
@@ -82,12 +84,15 @@ app.post(
       body: { url },
     });
     const data = await response.json();
-    console.log(data.message)
+    console.log(data.message);
     // remove old one
     const old = await getPDFFromDB();
     if (old) {
-      console.log(old.name);
-      unlinkSync("./public/" + old.name);
+      try {
+        unlinkSync("./public/" + old.name)
+      } catch (error) {
+        console.log(error )
+      }
       const deleteBody = {
         sources: [old.sourceId],
       };
@@ -154,29 +159,6 @@ app.post(
     body: chatSchema,
     query: t.Object({
       stream: t.Optional(t.Boolean()),
-    }),
-  }
-);
-
-app.post(
-  "/website-url",
-  async ({ body }) => {
-    const { url } = body;
-    const content = await scrapeBody(url);
-    if (content) {
-      const name = Math.round(Math.random()) + ".pdf";
-      const path = "./public/" + name;
-      await contentToPdf(content, path);
-      return { name };
-    }
-
-    return { message: "No content found" };
-  },
-  {
-    body: t.Object({
-      url: t.String({
-        minLength: 1,
-      }),
     }),
   }
 );
