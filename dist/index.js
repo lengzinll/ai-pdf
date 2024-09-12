@@ -196553,11 +196553,9 @@ var chatSchema = V.Object({
     })
   }))
 });
-var app = new Q0({ prefix: "/api/v1" }).use(src_default());
+var app = new Q0({}).use(src_default());
 app.use(swagger());
-app.use(staticPlugin({
-  prefix: "/"
-}));
+app.use(staticPlugin());
 app.get("/", async ({ request }) => {
   const appURL = request.url;
   return { message: "Hello Elysia with Bun" };
@@ -196578,6 +196576,13 @@ app.post("/upload-pdf", async ({ body: { file, content }, request }) => {
     Bun.write(path2, buffer);
   }
   const url = new URL(path2, appURL).toString();
+  const response = await api({
+    method: "POST",
+    path: "/sources/add-url",
+    body: { url }
+  });
+  const data2 = await response.json();
+  console.log(data2.message);
   const old = await getPDFFromDB();
   if (old) {
     console.log(old.name);
@@ -196593,16 +196598,6 @@ app.post("/upload-pdf", async ({ body: { file, content }, request }) => {
     const removeRedis = redis_default.del("pdf");
     await Promise.all([removePdf, removeRedis]);
   }
-  const response = await api({
-    method: "POST",
-    path: "/sources/add-url",
-    body: { url }
-  });
-  const data2 = await response.json();
-  if (!data2.sourceId)
-    return {
-      message: data2.message
-    };
   await redis_default.set("pdf", JSON.stringify({
     sourceId: data2.sourceId,
     url,

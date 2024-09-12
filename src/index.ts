@@ -40,7 +40,7 @@ async function getPDFFromDB() {
   return pdf;
 }
 
-const app = new Elysia({ prefix: "/api/v1" }).use(cors());
+const app = new Elysia({  }).use(cors());
 app.use(swagger());
 // app.use(
 //   logger({
@@ -48,9 +48,7 @@ app.use(swagger());
 //   })
 // );
 app.use(
-  staticPlugin({
-    prefix: "/",
-  })
+  staticPlugin()
 );
 
 app.get("/", async ({ request }) => {
@@ -77,8 +75,14 @@ app.post(
       const buffer = new Uint8Array(await file.arrayBuffer());
       Bun.write(path, buffer);
     }
-
     const url = new URL(path, appURL).toString();
+    const response = await api({
+      method: "POST",
+      path: "/sources/add-url",
+      body: { url },
+    });
+    const data = await response.json();
+    console.log(data.message)
     // remove old one
     const old = await getPDFFromDB();
     if (old) {
@@ -95,17 +99,6 @@ app.post(
       const removeRedis = redis.del("pdf");
       await Promise.all([removePdf, removeRedis]);
     }
-
-    const response = await api({
-      method: "POST",
-      path: "/sources/add-url",
-      body: { url },
-    });
-    const data = await response.json();
-    if (!data.sourceId)
-      return {
-        message: data.message,
-      };
 
     await redis.set(
       "pdf",
@@ -178,7 +171,6 @@ app.post(
     }
 
     return { message: "No content found" };
-    
   },
   {
     body: t.Object({
@@ -192,5 +184,3 @@ app.listen(3000);
 console.log(
   `🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`
 );
-
-
