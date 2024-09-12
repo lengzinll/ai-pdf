@@ -8,13 +8,16 @@ import { contentToPdf, isURL, scrapeBody } from "./helper";
 import { addPDFSchema, chatSchema } from "./schema";
 import prisma from "./libs/db";
 import { logger } from "@bogeychan/elysia-logger";
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from "uuid";
 
 async function getPDFFromDB() {
   const source = await prisma.source.findFirst();
   if (!source) return null;
   return source;
 }
+
+const serverFilePath = "C:\\NSM SOLUTION PROJECT\\KhmerDX\\KhmerDX\\Uploads\\";
+const fileUrl = "https://khmerdx.com";
 
 const app = new Elysia().use(cors());
 app.use(swagger());
@@ -31,7 +34,7 @@ app.get("/", async ({ request }) => {
 app.post(
   "/upload-pdf",
   async ({ body: { file, content }, request }) => {
-    const fileUrl = "https://khmerdx.com/";
+    
     const name = uuidv4() + ".pdf";
     const urlPath = "/Uploads/" + name;
     if (!content && !file)
@@ -40,8 +43,7 @@ app.post(
         { status: 400 }
       );
 
-    const url = new URL(urlPath, fileUrl).toString();
-    const path = "C:\\NSM SOLUTION PROJECT\\KhmerDX\\KhmerDX\\Uploads\\" + name;
+    const path = serverFilePath + name;
     if (content) {
       if (isURL(content)) {
         const scrapContent = await scrapeBody(content);
@@ -55,9 +57,7 @@ app.post(
       const buffer = new Uint8Array(await file.arrayBuffer());
       Bun.write(path, buffer);
     }
-
-    // const url = new URL(urlPath, fileUrl).toString();
-    
+    const url = new URL(urlPath, fileUrl).toString();
     const response = await api({
       method: "POST",
       path: "/sources/add-url",
@@ -67,8 +67,7 @@ app.post(
     // remove old one
     const old = await getPDFFromDB();
     if (old) {
-      console.log(old.name);
-      await unlink("./public/" + old.name).catch((e) => {
+      await unlink(serverFilePath + old.name).catch((e) => {
         console.log(e.message);
       });
       const deleteBody = {
@@ -114,7 +113,7 @@ app.post(
         method: "POST",
         path: "/chats/message",
         body: data,
-      })
+      });
 
       if (res.ok && res.body) {
         if (query.stream) {
@@ -132,7 +131,7 @@ app.post(
         }
       }
     } catch (error) {
-      return Response.json({  messages: error }, { status: 400 })
+      return Response.json({ messages: error }, { status: 400 });
     }
   },
   {
