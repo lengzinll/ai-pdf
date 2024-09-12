@@ -2,12 +2,10 @@ import { Elysia, t } from "elysia";
 import { swagger } from "@elysiajs/swagger";
 import { staticPlugin } from "@elysiajs/static";
 import cors from "@elysiajs/cors";
-import { logger } from "@bogeychan/elysia-logger";
 import { api } from "./config";
 import redis from "./redis";
-import PDFDocument from "pdfkit";
-import { createWriteStream } from "fs";
 import { unlinkSync } from "node:fs";
+import { contentToPdf, scrapeBody } from "./helper";
 
 type PDFType = {
   sourceId: string;
@@ -71,16 +69,7 @@ app.post(
     const name = Math.round(Math.random()) + ".pdf";
     const path = "./public/" + name;
     if (content) {
-      const doc = new PDFDocument();
-      const stream = createWriteStream(path);
-      doc.pipe(stream);
-      doc.text(content!, 50, 50);
-      doc.end();
-
-      await new Promise((resolve, reject) => {
-        stream.on("finish", resolve);
-        stream.on("error", reject);
-      });
+      await contentToPdf(content, path);
     } else {
       if (!file) {
         return Response.json({ message: "No file provided" }, { status: 400 });
@@ -93,7 +82,7 @@ app.post(
     // remove old one
     const old = await getPDFFromDB();
     if (old) {
-      console.log(old.name)
+      console.log(old.name);
       unlinkSync("./public/" + old.name);
       const deleteBody = {
         sources: [old.sourceId],
@@ -175,7 +164,33 @@ app.post(
     }),
   }
 );
+
+app.post(
+  "/website-url",
+  async ({ body }) => {
+    const { url } = body;
+    const content = await scrapeBody(url);
+    if (content) {
+      const name = Math.round(Math.random()) + ".pdf";
+      const path = "./public/" + name;
+      await contentToPdf(content, path);
+      return { name };
+    }
+
+    return { message: "No content found" };
+    
+  },
+  {
+    body: t.Object({
+      url: t.String({
+        minLength: 1,
+      }),
+    }),
+  }
+);
 app.listen(3000);
 console.log(
   `🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`
 );
+
+
