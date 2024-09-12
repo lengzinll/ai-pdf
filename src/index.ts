@@ -4,8 +4,9 @@ import { staticPlugin } from "@elysiajs/static";
 import cors from "@elysiajs/cors";
 import { api } from "./config";
 import redis from "./redis";
-import { unlinkSync } from "node:fs";
+import { unlink } from "node:fs/promises";
 import { contentToPdf, isURL, scrapeBody } from "./helper";
+import { addPDFSchema, chatSchema } from "./schema";
 
 type PDFType = {
   sourceId: string;
@@ -13,25 +14,6 @@ type PDFType = {
   name: string;
 };
 
-const addPDFSchema = t.Object({
-  file: t.Optional(t.File()),
-  content: t.Optional(t.String()),
-});
-
-const chatSchema = t.Object({
-  messages: t.Array(
-    t.Object({
-      role: t.String({
-        minLength: 1,
-        default: "user",
-      }),
-      content: t.String({
-        minLength: 1,
-        default: "what the doc say",
-      }),
-    })
-  ),
-});
 
 async function getPDFFromDB() {
   const _pdf = await redis.get("pdf");
@@ -50,7 +32,6 @@ app.use(swagger());
 app.use(staticPlugin());
 
 app.get("/", async ({ request }) => {
-  const appURL = request.url;
   return { message: "Hello Elysia with Bun" };
 });
 app.post(
@@ -65,7 +46,8 @@ app.post(
     const name = Math.round(Math.random()) + ".pdf";
     const path = "./public/" + name;
     if (content) {
-      if (isURL(content)) { // user past url
+      if (isURL(content)) {
+        // user past url
         const scrapContent = await scrapeBody(content);
         if (scrapContent) content = scrapContent;
       }
@@ -88,11 +70,9 @@ app.post(
     // remove old one
     const old = await getPDFFromDB();
     if (old) {
-      try {
-        unlinkSync("./public/" + old.name)
-      } catch (error) {
-        console.log(error )
-      }
+      await unlink("./public/" + old.name).catch((e) => {
+        console.log(e.message);
+      });
       const deleteBody = {
         sources: [old.sourceId],
       };
