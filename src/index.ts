@@ -3,32 +3,26 @@ import { swagger } from "@elysiajs/swagger";
 import { staticPlugin } from "@elysiajs/static";
 import cors from "@elysiajs/cors";
 import { api } from "./config";
-import redis from "./redis";
 import { unlink } from "node:fs/promises";
 import { contentToPdf, isURL, scrapeBody } from "./helper";
 import { addPDFSchema, chatSchema } from "./schema";
-
-type PDFType = {
-  sourceId: string;
-  url: string;
-  name: string;
-};
-
+import prisma from "./libs/db";
+import { logger } from "@bogeychan/elysia-logger";
+import { v4 as uuidv4 } from 'uuid';
 
 async function getPDFFromDB() {
-  const _pdf = await redis.get("pdf");
-  const pdf: PDFType = _pdf ? JSON.parse(_pdf) : null;
-  if (!pdf) return null;
-  return pdf;
+  const source = await prisma.source.findFirst();
+  if (!source) return null;
+  return source;
 }
 
 const app = new Elysia({}).use(cors());
 app.use(swagger());
-// app.use(
-//   logger({
-//     level: "error",
-//   })
-// );
+app.use(
+  logger({
+    level: "info",
+  })
+);
 app.use(staticPlugin());
 
 app.get("/", async ({ request }) => {
@@ -43,7 +37,7 @@ app.post(
         { message: "No file provided or content provided" },
         { status: 400 }
       );
-    const name = Math.round(Math.random()) + ".pdf";
+    const name = uuidv4() + ".pdf";
     const path = "./public/" + name;
     if (content) {
       if (isURL(content)) {
@@ -66,10 +60,10 @@ app.post(
       body: { url },
     });
     const data = await response.json();
-    console.log(data.message);
     // remove old one
     const old = await getPDFFromDB();
     if (old) {
+      console.log(old.name);
       await unlink("./public/" + old.name).catch((e) => {
         console.log(e.message);
       });
@@ -81,18 +75,16 @@ app.post(
         path: "sources/delete",
         body: deleteBody,
       });
-      const removeRedis = redis.del("pdf");
-      await Promise.all([removePdf, removeRedis]);
+      const removeFromDB = prisma.source.deleteMany();
+      await Promise.all([removePdf, removeFromDB]);
     }
-
-    await redis.set(
-      "pdf",
-      JSON.stringify({
-        sourceId: data.sourceId,
+    await prisma.source.create({
+      data: {
+        sourceId: data.sourceId || "no-sourceId",
         url,
         name,
-      })
-    );
+      },
+    });
     return { name };
   },
   {
@@ -105,7 +97,7 @@ app.post(
     const { messages } = body;
     const pdf = await getPDFFromDB();
     if (!pdf)
-      return Response.json({ message: "No PDF found" }, { status: 404 });
+      return Response.json({ message: "No Source found" }, { status: 404 });
 
     const data = {
       sourceId: pdf.sourceId,
@@ -113,26 +105,30 @@ app.post(
       messages,
     };
 
-    const res = await api({
-      method: "POST",
-      path: "/chats/message",
-      body: data,
-    });
+    try {
+      const res = await api({
+        method: "POST",
+        path: "/chats/message",
+        body: data,
+      })
 
-    if (res.ok && res.body) {
-      if (query.stream) {
-        const reader = res.body.getReader();
-        let decoder = new TextDecoder();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          yield chunk;
+      if (res.ok && res.body) {
+        if (query.stream) {
+          const reader = res.body.getReader();
+          let decoder = new TextDecoder();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            yield chunk;
+          }
+        } else {
+          const data = await res.json();
+          return data;
         }
-      } else {
-        const data = await res.json();
-        return data;
       }
+    } catch (error) {
+      return Response.json({  messages: error }, { status: 400 })
     }
   },
   {

@@ -5,23 +5,27 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "bun run --watch src/index.ts",
     "build": "bun build src/index.ts --target bun --outdir ./dist",
-    "start": "NODE_ENV=production bun dist/index.js"
+    "start": "NODE_ENV=production bun dist/index.js",
+    "push": "bunx prisma db push",
+    "studio": "bunx prisma studio"
   },
   "dependencies": {
     "@bogeychan/elysia-logger": "^0.1.2",
     "@elysiajs/cors": "^1.1.1",
     "@elysiajs/static": "^1.1.1",
     "@elysiajs/swagger": "^1.1.1",
+    "@prisma/client": "5.19.1",
     "better-sqlite3": "^11.3.0",
     "cheerio": "^1.0.0",
-    "drizzle-orm": "^0.33.0",
     "elysia": "latest",
-    "ioredis": "^5.4.1",
-    "pdfkit": "^0.15.0"
+    "pdfkit": "^0.15.0",
+    "prisma": "^5.19.1",
+    "uuid": "^10.0.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
     "@types/pdfkit": "^0.13.4",
+    "@types/uuid": "^10.0.0",
     "bun-types": "latest",
     "drizzle-kit": "^0.24.2"
   },
