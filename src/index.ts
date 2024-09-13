@@ -21,11 +21,6 @@ const fileUrl = "https://khmerdx.com";
 
 const app = new Elysia().use(cors());
 app.use(swagger());
-app.use(
-  logger({
-    level: "info",
-  })
-);
 app.use(staticPlugin());
 
 app.get("/", async ({ request }) => {
@@ -34,7 +29,6 @@ app.get("/", async ({ request }) => {
 app.post(
   "/upload-pdf",
   async ({ body: { file, content }, request }) => {
-    
     const name = uuidv4() + ".pdf";
     const urlPath = "/Uploads/" + name;
     if (!content && !file)
@@ -48,6 +42,11 @@ app.post(
       if (isURL(content)) {
         const scrapContent = await scrapeBody(content);
         if (scrapContent) content = scrapContent;
+        else
+          return Response.json(
+            { message: "Can not scrap that website url : " + content },
+            { status: 400 }
+          );
       }
       await contentToPdf(content, path);
     } else {
@@ -101,10 +100,9 @@ app.post(
     const pdf = await getPDFFromDB();
     if (!pdf)
       return Response.json({ message: "No Source found" }, { status: 404 });
-
     const data = {
       sourceId: pdf.sourceId,
-      stream: query.stream || false,
+      stream: Boolean(query.stream) || false,
       messages,
     };
 
@@ -141,6 +139,7 @@ app.post(
     }),
   }
 );
+
 app.listen(3000);
 console.log(
   `🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`

@@ -26,6 +26,7 @@ export async function scrapeBody(url: string) {
     return bodyContent;
   } catch (error) {
     console.error("Error fetching the website:", error);
+    return null
   }
 }
 
