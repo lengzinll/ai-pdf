@@ -16,8 +16,11 @@ async function getPDFFromDB() {
   return source;
 }
 
-const serverFilePath = "C:\\NSM SOLUTION PROJECT\\KhmerDX\\KhmerDX\\Uploads\\";
-const fileUrl = "https://khmerdx.com";
+// const serverFilePath = "C:\\NSM SOLUTION PROJECT\\KhmerDX\\KhmerDX\\Uploads\\";
+// const fileUrl = "https://khmerdx.com";
+
+const serverFilePath = "./public";
+const fileUrl = "https://ai-pdf-k710.onrender.com";
 
 const app = new Elysia().use(cors());
 app.use(swagger());
