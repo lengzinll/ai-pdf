@@ -11,18 +11,21 @@ import { RunnableSequence } from "@langchain/core/runnables";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { embeddings, llm } from "./ai";
 
-const app = new Elysia().use(cors());
+const app = new Elysia()
+app.use(cors());
 app.use(swagger());
 app.use(staticPlugin());
 
-const TEMPLATE = `You are an assistant for question-answering tasks. Use only the following pieces of retrieved context and chat history to answer the question. If you don't know the answer, just reply kindly that you don't know:
+const TEMPLATE = `
+You are an assistant for answer this question: {question}?.
+from this context: {context}.
+**NOTE: Please Answer By Follow this instructions carefully**:
+  - You must response language same as the question language
+  - Don't say "provide text ..." in your answer. you should say "our company ..." instead
+  - If you don't know just reply a kindly general knowledge.
 ==============================
-Context: {context}
-==============================
-Current conversation: {chat_history}
-
-user: {question}
-assistant:`;
+Current Conversation: {chat_history}
+`;
 
 app.get("/", async ({ request }) => {
   return { message: "Hello Elysia with Bun" };
@@ -55,25 +58,23 @@ app.post(
   async function* ({ body, query }) {
     const { messages } = body;
 
-    console.log(messages)
-
     try {
       const doc = await prisma.source.findFirst();
       if (!doc) return { message: "Don't have doc please add doc !" };
 
-      const formattedPreviousMessages = messages.slice(0, -1);
+      const previousMessages = messages.slice(0, -1);
       const currentMessageContent = messages[messages.length - 1].content;
 
       const textSplitter = new RecursiveCharacterTextSplitter({
-        chunkSize: 1000,
-        chunkOverlap: 200,
+        chunkSize: 800,
+        chunkOverlap: 100,
       });
       const docs = await textSplitter.createDocuments([
         JSON.stringify(doc.content),
       ]);
 
       const vectorStore = new MemoryVectorStore(embeddings);
-      await vectorStore.addDocuments(docs);
+      await vectorStore.addDocuments(docs).catch((err) => console.error(err));
       let retriever = vectorStore.asRetriever();
       const prompt = PromptTemplate.fromTemplate(TEMPLATE);
       const chain = RunnableSequence.from([
@@ -91,7 +92,7 @@ app.post(
 
       if (query.stream) {
         const stream = await chain.stream({
-          chat_history: formattedPreviousMessages.join("\n"),
+          chat_history: previousMessages.join("\n"),
           question: currentMessageContent,
         });
         for await (const chunk of stream) {
@@ -101,7 +102,7 @@ app.post(
       }
 
       const response = await chain.invoke({
-        chat_history: formattedPreviousMessages.join("\n"),
+        chat_history: previousMessages.join("\n"),
         question: currentMessageContent,
       });
 
@@ -116,6 +117,9 @@ app.post(
     body: chatSchema,
     query: t.Object({
       stream: t.Optional(t.Boolean()),
+      inKhmer: t.Boolean({
+        default: false
+      })
     }),
   }
 );

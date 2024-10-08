@@ -1,5 +1,7 @@
 export const env = {
-  redis: Bun.env.REDIS_URL || "",
   api_key: Bun.env.API_KEY || "",
-  base_url: Bun.env.BASE_URL || "",
 };
+
+if (!env.api_key) {
+  throw new Error("Please set your OpenAI API key in the .env file");
+}
