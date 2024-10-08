@@ -1,8 +1,7 @@
 import { t } from "elysia";
 
-export const addPDFSchema = t.Object({
-  file: t.Optional(t.File()),
-  content: t.Optional(t.String()),
+export const addContentSchema = t.Object({
+  content: t.Union([t.String(), t.File()]),
 });
 
 export const chatSchema = t.Object({
@@ -14,7 +13,7 @@ export const chatSchema = t.Object({
       }),
       content: t.String({
         minLength: 1,
-        default: "what the doc say",
+        default: "who are you",
       }),
     })
   ),

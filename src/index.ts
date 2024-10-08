@@ -2,135 +2,112 @@ import { Elysia, t } from "elysia";
 import { swagger } from "@elysiajs/swagger";
 import { staticPlugin } from "@elysiajs/static";
 import cors from "@elysiajs/cors";
-import { api } from "./config";
-import { unlink } from "node:fs/promises";
-import { contentToPdf, isURL, scrapeBody } from "./helper";
-import { addPDFSchema, chatSchema } from "./schema";
-import prisma from "./libs/db";
+import { addContentSchema, chatSchema } from "./schema";
+import prisma from "./db";
 import { logger } from "@bogeychan/elysia-logger";
-import { v4 as uuidv4 } from "uuid";
-
-async function getPDFFromDB() {
-  const source = await prisma.source.findFirst();
-  if (!source) return null;
-  return source;
-}
-
-// const serverFilePath = "C:\\NSM SOLUTION PROJECT\\KhmerDX\\KhmerDX\\Uploads\\";
-// const fileUrl = "https://khmerdx.com";
-
-const serverFilePath = "./public";
-const fileUrl = "https://ai-pdf-k710.onrender.com";
+import { PromptTemplate } from "@langchain/core/prompts";
+import { MemoryVectorStore } from "langchain/vectorstores/memory";
+import { RunnableSequence } from "@langchain/core/runnables";
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
+import { embeddings, llm } from "./ai";
 
 const app = new Elysia().use(cors());
 app.use(swagger());
 app.use(staticPlugin());
 
+const TEMPLATE = `You are an assistant for question-answering tasks. Use only the following pieces of retrieved context and chat history to answer the question. If you don't know the answer, just reply kindly that you don't know:
+==============================
+Context: {context}
+==============================
+Current conversation: {chat_history}
+
+user: {question}
+assistant:`;
+
 app.get("/", async ({ request }) => {
   return { message: "Hello Elysia with Bun" };
 });
 app.post(
-  "/upload-pdf",
-  async ({ body: { file, content }, request }) => {
-    const name = uuidv4() + ".pdf";
-    const urlPath = "/Uploads/" + name;
-    if (!content && !file)
-      return Response.json(
-        { message: "No file provided or content provided" },
-        { status: 400 }
-      );
+  "/add-content",
+  async ({ body: { content } }) => {
+    const data = {
+      content: content as string,
+    };
 
-    const path = serverFilePath + name;
-    if (content) {
-      if (isURL(content)) {
-        const scrapContent = await scrapeBody(content);
-        if (scrapContent) content = scrapContent;
-        else
-          return Response.json(
-            { message: "Can not scrap that website url : " + content },
-            { status: 400 }
-          );
-      }
-      await contentToPdf(content, path);
-    } else {
-      if (!file) {
-        return Response.json({ message: "No file provided" }, { status: 400 });
-      }
-      const buffer = new Uint8Array(await file.arrayBuffer());
-      Bun.write(path, buffer);
+    if (typeof content !== "string") {
+      const file = content as File;
+      data.content = await file.text();
     }
-    const url = new URL(urlPath, fileUrl).toString();
-    const response = await api({
-      method: "POST",
-      path: "/sources/add-url",
-      body: { url },
-    });
-    const data = await response.json();
-    // remove old one
-    const old = await getPDFFromDB();
-    if (old) {
-      await unlink(serverFilePath + old.name).catch((e) => {
-        console.log(e.message);
-      });
-      const deleteBody = {
-        sources: [old.sourceId],
-      };
-      const removePdf = api({
-        method: "POST",
-        path: "sources/delete",
-        body: deleteBody,
-      });
-      const removeFromDB = prisma.source.deleteMany();
-      await Promise.all([removePdf, removeFromDB]);
-    }
-    await prisma.source.create({
-      data: {
-        sourceId: data.sourceId || "no-sourceId",
-        url,
-        name,
-      },
-    });
-    return { name };
+
+    await Promise.all([
+      prisma.source.deleteMany(),
+      prisma.source.create({ data }),
+    ]);
+
+    return { message: "Content add success" };
   },
   {
-    body: addPDFSchema,
+    body: addContentSchema,
   }
 );
 app.post(
   "/chat",
   async function* ({ body, query }) {
     const { messages } = body;
-    const pdf = await getPDFFromDB();
-    if (!pdf)
-      return Response.json({ message: "No Source found" }, { status: 404 });
-    const data = {
-      sourceId: pdf.sourceId,
-      stream: Boolean(query.stream) || false,
-      messages,
-    };
+
+    console.log(messages)
 
     try {
-      const res = await api({
-        method: "POST",
-        path: "/chats/message",
-        body: data,
+      const doc = await prisma.source.findFirst();
+      if (!doc) return { message: "Don't have doc please add doc !" };
+
+      const formattedPreviousMessages = messages.slice(0, -1);
+      const currentMessageContent = messages[messages.length - 1].content;
+
+      const textSplitter = new RecursiveCharacterTextSplitter({
+        chunkSize: 1000,
+        chunkOverlap: 200,
+      });
+      const docs = await textSplitter.createDocuments([
+        JSON.stringify(doc.content),
+      ]);
+
+      const vectorStore = new MemoryVectorStore(embeddings);
+      await vectorStore.addDocuments(docs);
+      let retriever = vectorStore.asRetriever();
+      const prompt = PromptTemplate.fromTemplate(TEMPLATE);
+      const chain = RunnableSequence.from([
+        {
+          question: (input) => input.question,
+          chat_history: (input) => input.chat_history,
+          context: async () => {
+            const vectorQuery = await retriever.invoke(currentMessageContent);
+            return vectorQuery.map((doc) => doc.pageContent).join("\n");
+          },
+        },
+        prompt,
+        llm,
+      ]);
+
+      if (query.stream) {
+        const stream = await chain.stream({
+          chat_history: formattedPreviousMessages.join("\n"),
+          question: currentMessageContent,
+        });
+        for await (const chunk of stream) {
+          yield chunk.content;
+        }
+        return;
+      }
+
+      const response = await chain.invoke({
+        chat_history: formattedPreviousMessages.join("\n"),
+        question: currentMessageContent,
       });
 
-      if (res.ok && res.body) {
-        if (query.stream) {
-          const reader = res.body.getReader();
-          let decoder = new TextDecoder();
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const chunk = decoder.decode(value, { stream: true });
-            yield chunk;
-          }
-        } else {
-          const data = await res.json();
-          return data;
-        }
-      }
+      return {
+        content: response.content,
+      };
     } catch (error) {
       return Response.json({ messages: error }, { status: 400 });
     }

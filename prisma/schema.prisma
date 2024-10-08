@@ -9,7 +9,5 @@ datasource db {
 
 model Source {
   id       Int    @id @default(autoincrement())
-  sourceId String @unique
-  name     String
-  url      String
+  content String
 }
