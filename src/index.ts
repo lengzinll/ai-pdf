@@ -9,9 +9,9 @@ import { PromptTemplate } from "@langchain/core/prompts";
 import { MemoryVectorStore } from "langchain/vectorstores/memory";
 import { RunnableSequence } from "@langchain/core/runnables";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
-import { embeddings, llm } from "./ai";
+import { embeddings, llm, textToSpeachWithGoogle } from "./ai";
 
-const app = new Elysia()
+const app = new Elysia();
 app.use(cors());
 app.use(swagger());
 app.use(staticPlugin());
@@ -118,8 +118,28 @@ app.post(
     query: t.Object({
       stream: t.Optional(t.Boolean()),
       inKhmer: t.Boolean({
-        default: false
-      })
+        default: false,
+      }),
+    }),
+  }
+);
+
+app.post(
+  "/text-to-speech",
+  async ({ body }) => {
+    const { text } = body;
+    const response = await textToSpeachWithGoogle(text).catch((error) => {
+      console.error("Error:", error);
+      return Response.json({ messages: error }, { status: 400 });
+    })
+    return response;
+  },
+  {
+    body: t.Object({
+      text: t.String({
+        minLength: 1,
+        maxLength: 10000,
+      }),
     }),
   }
 );
